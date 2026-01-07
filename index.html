@@ -6,7 +6,7 @@
     <title>Ajedrez Siurot - Por Equipos</title>
     <meta name="theme-color" content="#e67e22">
     
-    <!-- Favicon ACTUALIZADO -->
+    <!-- Favicon -->
     <link rel="icon" href="https://raw.githubusercontent.com/ManuelVS8/Ajedrez_Equipos/refs/heads/main/Torneo_ajedrez.ico" type="image/x-icon">
     
     <!-- MANIFESTO PARA PWA -->
@@ -100,6 +100,15 @@
         
         body.is-locked .show-lock-msg .lock-overlay {
             display: block;
+        }
+
+        /* --- PARCHES DE SEGURIDAD PARA EL MODAL --- */
+        body.is-locked .modal .editable-element,
+        body.is-locked .modal-content input,
+        body.is-locked .modal-content button {
+            opacity: 1 !important;
+            pointer-events: auto !important;
+            user-select: auto !important;
         }
 
         button {
@@ -417,11 +426,12 @@
 <script>
     // --- CONFIG & STATE ---
     const ADMIN_PASS = "bejherro";
-    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx6XJiwlimuTTiR1mc6jVYJfssBhJzioixz4cKy5XpNNnKfMYFhoj0Mv7ORVeVl2m28/exec";
+    // URL NUEVA ACTUALIZADA
+    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxwY7j2I05rnFG7G6umYaRRvcCUWkTq5dUMHsWHNYoCwwzi8GfXcVIbSnLEwxrRtolg/exec";
 
     let isAdmin = false;
     let appData = { teams: [], matches: [], started: false };
-    let currentRound = 1;
+    let currentRound =1;
     let pendingAction = null;
     let rankingViewMode = 'teams';
 
@@ -465,6 +475,7 @@
         }
     }
 
+    // FUNCIÓN ACTUALIZADA PARA ARREGLAR EL BLOQUEO
     async function syncToGoogle() {
         if (!isAdmin) {
             showToast("Modo Solo Lectura");
@@ -480,21 +491,31 @@
             matches: JSON.stringify(appData.matches)
         };
         
+        // Intentamos hasta 2 veces (por si falla la red)
         for (let i = 0; i < 2; i++) {
             try {
                 const res = await fetch(SCRIPT_URL, {
                     method: 'POST',
-                    mode: 'no-cors',
+                    mode: 'no-cors', // Necesario para evitar bloqueos de seguridad de Google
                     body: JSON.stringify(payload),
                     headers: { 'Content-Type': 'application/json' }
                 });
                 
-                showToast(`✅ Resultados guardados`);
-                setTimeout(fetchFromGoogle, 2000);
+                // IMPORTANTE: Con 'no-cors', no podemos saber si el servidor dio OK,
+                // así que esperamos un tiempo prudencial (4 segundos) 
+                // para asegurar que Google termine de escribir los datos antes de volver a leer.
+                showToast(`✅ Resultados enviados. Actualizando...`);
+                
+                // Espera 4 segundos antes de refrescar para evitar leer datos antiguos
+                setTimeout(fetchFromGoogle, 4000);
                 return; 
+
             } catch (e) {
                 console.warn(`Reintento de guardado (${i+1})...`, e);
-                if (i === 1) showToast("❌ Error de red.");
+                if (i === 1) {
+                    showToast("❌ Error de red al guardar.");
+                    hideLoading(); // Cerramos el spinner si falla definitivamente
+                }
             }
         }
     }
@@ -623,7 +644,7 @@
             team.players.forEach((p, pIndex) => {
                 playersHTML += `
                     <div class="player-row">
-                        <span class="player-num">${pIndex + 1}.</span>
+                        <span class="player-num">${pIndex +1}.</span>
                         <input type="text" class="editable-element" value="${p.name}" placeholder="Nombre Jugador" onchange="updatePlayerName(${index}, ${pIndex}, this.value)">
                         ${isAdmin ? `<button class="danger small" onclick="removePlayer(${index}, ${pIndex})">×</button>` : ''}
                     </div>
@@ -632,7 +653,7 @@
             teamCard.innerHTML = `
                 <div class="team-header">
                     <input type="text" class="editable-element" value="${team.name}" placeholder="Nombre del Equipo" onchange="updateTeamName(${index}, this.value)">
-                    ${isAdmin && appData.teams.length > 1 ? `<button class="danger small" onclick="removeTeam(${index})">Eliminar</button>` : ''}
+                    ${isAdmin && appData.teams.length >1 ? `<button class="danger small" onclick="removeTeam(${index})">Eliminar</button>` : ''}
                 </div>
                 <div class="player-list">${playersHTML}<div style="margin-top: 10px; text-align: center;"><button class="secondary editable-element small" style="width:100%; font-size: 0.8rem;" onclick="addPlayerToTeam(${index})">+ Añadir Jugador</button></div></div>
             `;
@@ -643,7 +664,7 @@
     function addNewTeamUI() {
         if(!isAdmin) return;
         const newId = Date.now().toString();
-        appData.teams.push({ id: newId, name: `Equipo ${appData.teams.length + 1}`, players: [ { id: newId + "_p1", name: "" }, { id: newId + "_p2", name: "" } ] });
+        appData.teams.push({ id: newId, name: `Equipo ${appData.teams.length +1}`, players: [ { id: newId + "_p1", name: "" }, { id: newId + "_p2", name: "" } ] });
         renderTeamsSetup(); playTap();
     }
 
@@ -789,12 +810,18 @@
         }
     }
 
+    // FUNCIÓN OPTIMIZADA PARA EL SELECT
     function renderMatches(roundNum) {
         const container = document.getElementById('matchesContainer');
         container.innerHTML = "";
         const roundMatches = appData.matches.filter(m => m.round === roundNum);
-        if (roundMatches.length === 0) { container.innerHTML = "<p>No hay partidas para esta ronda.</p>"; return; }
 
+        if (roundMatches.length === 0) {
+            container.innerHTML = "<p>No hay partidas para esta ronda.</p>";
+            return;
+        }
+
+        // Agrupar por teamMatchId
         const teamGroups = {};
         roundMatches.forEach(m => { if (!teamGroups[m.teamMatchId]) teamGroups[m.teamMatchId] = []; teamGroups[m.teamMatchId].push(m); });
 
@@ -802,6 +829,7 @@
             const groupMatches = teamGroups[gId];
             const t1 = appData.teams.find(t => t.id === groupMatches[0].team1Id);
             const t2 = appData.teams.find(t => t.id === groupMatches[0].team2Id);
+            
             let score1 = 0, score2 = 0;
             groupMatches.forEach(m => {
                 if (m.result === '1-0') score1++;
@@ -819,9 +847,11 @@
                 </div>
             `;
 
+            // Generar tableros
             groupMatches.forEach(m => {
                 const p1 = t1.players.find(p => p.id === m.player1Id);
                 const p2 = t2.players.find(p => p.id === m.player2Id);
+                
                 let p1Class = "board-p1", p2Class = "board-p2";
                 const isBoardOdd = (m.boardNum % 2 !== 0);
                 const icon1 = isBoardOdd ? "♔" : "♚";
@@ -833,19 +863,43 @@
 
                 const boardDiv = document.createElement('div');
                 boardDiv.className = 'board-row';
-                boardDiv.innerHTML = `
+                
+                const selectDiv = document.createElement('div');
+                selectDiv.style.marginTop = "5px";
+                selectDiv.innerHTML = `
                     <div class="board-players">
                         <div class="${p1Class}">${icon1} ${p1 ? p1.name : 'N/A'}</div>
                         <div style="font-size:0.8rem; color:#999; margin:0 5px;">vs</div>
                         <div class="${p2Class}">${p2 ? p2.name : 'N/A'} ${icon2}</div>
                     </div>
-                    <select class="board-select editable-element" onchange="updateMatch('${m.id}', this.value)">
-                        <option value="" ${m.result === "" ? "selected" : ""}>Seleccionar resultado...</option>
-                        <option value="1-0" ${m.result === "1-0" ? "selected" : ""}>1-0 (Ganan Blancas)</option>
-                        <option value="0-1" ${m.result === "0-1" ? "selected" : ""}>0-1 (Ganan Negras)</option>
-                        <option value="1/2-1/2" ${m.result === "1/2-1/2" ? "selected" : ""}>½-½ (Tablas)</option>
-                    </select>
                 `;
+                
+                const selectElement = document.createElement('select');
+                selectElement.className = 'board-select editable-element';
+                
+                // Añadir opciones
+                const opts = [
+                    {val: "", txt: "Seleccionar resultado..."},
+                    {val: "1-0", txt: "1-0 (Ganan Blancas)"},
+                    {val: "0-1", txt: "0-1 (Ganan Negras)"},
+                    {val: "1/2-1/2", txt: "½-½ (Tablas)"}
+                ];
+
+                opts.forEach(opt => {
+                    const option = document.createElement('option');
+                    option.value = opt.val;
+                    option.text = opt.txt;
+                    if (m.result === opt.val) option.selected = true;
+                    selectElement.appendChild(option);
+                });
+
+                // Añadir listener de evento de forma segura
+                selectElement.addEventListener('change', (e) => {
+                    updateMatch(m.id, e.target.value);
+                });
+
+                selectDiv.appendChild(selectElement);
+                boardDiv.appendChild(selectDiv);
                 card.appendChild(boardDiv);
             });
             container.appendChild(card);
@@ -861,7 +915,6 @@
     }
 
     // --- RANKING LOGIC (COMPLEX) ---
-
     function renderRanking() {
         const thead = document.querySelector('#rankingTable thead');
         const tbody = document.querySelector('#rankingTable tbody');
@@ -963,7 +1016,7 @@
                     if (opp) {
                         // Encontrar resultado contra este oponente
                         const match = appData.matches.find(m => 
-                            (m.player1Id === p.id && m.player2Id === oppId) ||
+                            (m.player1Id === p.id && m.player2Id === oppId) || 
                             (m.player1Id === opp.id && m.player2Id === p.id)
                         );
                         if (match && match.result) {
@@ -1201,7 +1254,7 @@
         doc.text(`Fecha: ${new Date().toLocaleDateString('es-ES')}`, margin, y);
         y += 15;
 
-        // 1. CLASIFICACIÓN EQUIPOS (Reutilizando cálculo existente)
+        // 1. CLASIFICACIÓN EQUIPOS
         doc.setFontSize(14);
         doc.setTextColor(0);
         doc.text("Clasificación de Equipos", margin, y);
@@ -1258,7 +1311,7 @@
             doc.text(`Ronda ${r}`, margin, y);
             y += 8;
             
-            // Línea separadora sutil
+            // Línea separadora sutil (opcional pero estético)
             doc.setDrawColor(200);
             doc.setLineWidth(0.5);
             doc.line(margin, y, pageWidth - margin, y);
@@ -1305,6 +1358,26 @@
         doc.save("Resultado_Torneo_Equipos_Siurot.pdf");
         showToast("PDF generado");
     }
+
+    // --- MANEJO DE VISIBILIDAD (Corrección para despertar móvil) ---
+    document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") {
+            console.log("Aplicación visible (Desbloqueo)");
+            
+            // Asegurar que no haya un bloqueo de carga fantasma
+            hideLoading();
+
+            // Si el modal de contraseña está abierto, forzar el foco
+            const pwdModal = document.getElementById('pwdModal');
+            if (pwdModal && pwdModal.style.display === "flex") {
+                // Timeout pequeño para dar tiempo al navegador de "despertar" el DOM
+                setTimeout(() => {
+                    const input = document.getElementById('pwdInput');
+                    if(input) input.focus();
+                }, 300);
+            }
+        }
+    });
 </script>
 
 </body>
